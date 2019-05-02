@@ -36,40 +36,46 @@ Module downloadImages
 
         Dim qdb As New QuickBaseClient(NameValues("usertoken"))
         qdb.setServer(NameValues("server"), True)
-        Dim xmlRecords As XmlDocument = qdb.DoQuery(NameValues("dbid"), NameValues("qid"), "a", "", "")
-        Dim fields As XmlNodeList = xmlRecords.SelectNodes("/*/table/fields/field[@field_type='file']")
-        Dim getFileExtension As Regex = New Regex("(\.[0-9a-z]+)$", RegexOptions.IgnoreCase)
+        Dim recordCount As Integer = 0
+        Dim skip As Integer = 0
+        Dim chunkSize = 100
+        Do
+            Dim xmlRecords As XmlDocument = qdb.DoQuery(NameValues("dbid"), NameValues("qid"), "a", "3", "skp-" & skip & ".num-" & chunkSize)
+            Dim fields As XmlNodeList = xmlRecords.SelectNodes("/*/table/fields/field[@field_type='file']")
+            Dim getFileExtension As Regex = New Regex("(\.[0-9a-z]+)$", RegexOptions.IgnoreCase)
 
-        Dim records As XmlNodeList = xmlRecords.SelectNodes("/*/table/records/record")
-        Dim j As Integer
-        For i = 0 To records.Count - 1
-            Dim rid As String = records(i).SelectSingleNode("@rid").InnerText()
-            For j = 0 To fields.Count - 1
-                Dim delimiter = ""
-                Dim filename As String = ""
-                Dim k As Integer
-                For k = 0 To filenameTemplateFids.Count - 1
-                    filename &= delimiter
-                    delimiter = "_"
-                    If filenameTemplateFids(k) = "0" Then
-                        filename &= fields(j).SelectSingleNode("label").InnerText()
-                    Else
-                        filename &= records(i).SelectSingleNode("f[@id=" & filenameTemplateFids(k) & "]").InnerText()
+            Dim records As XmlNodeList = xmlRecords.SelectNodes("/*/table/records/record")
+            recordCount = records.Count
+            Dim j As Integer
+            For i = 0 To records.Count - 1
+                Dim rid As String = records(i).SelectSingleNode("@rid").InnerText()
+                For j = 0 To fields.Count - 1
+                    Dim delimiter = ""
+                    Dim filename As String = ""
+                    Dim k As Integer
+                    For k = 0 To filenameTemplateFids.Count - 1
+                        filename &= delimiter
+                        delimiter = "_"
+                        If filenameTemplateFids(k) = "0" Then
+                            filename &= fields(j).SelectSingleNode("label").InnerText()
+                        Else
+                            filename &= records(i).SelectSingleNode("f[@id=" & filenameTemplateFids(k) & "]").InnerText()
+                        End If
+                    Next
+                    'now we need to download the file
+                    Dim fid As String = fields(j).SelectSingleNode("@id").InnerText()
+                    Dim urlNode As XmlNode = records(i).SelectSingleNode("f[@id='" & fid & "']/url")
+                    If urlNode IsNot Nothing Then
+                        Dim url As String = urlNode.InnerText()
+                        Dim extensionMatch As Match = getFileExtension.Match(url)
+                        filename &= extensionMatch.Value
+                        Console.WriteLine("Downloading: " & filename)
+                        qdb.downloadAttachedFile(NameValues("dbid"), rid, fid, NameValues("folder"), filename)
                     End If
                 Next
-                'now we need to download the file
-                Dim fid As String = fields(j).SelectSingleNode("@id").InnerText()
-                Dim urlNode As XmlNode = records(i).SelectSingleNode("f[@id='" & fid & "']/url")
-                If urlNode IsNot Nothing Then
-                    Dim url As String = urlNode.InnerText()
-                    Dim extensionMatch As Match = getFileExtension.Match(url)
-                    filename &= extensionMatch.Value
-                    Console.WriteLine("Downloading: " & filename)
-                    qdb.downloadAttachedFile(NameValues("dbid"), rid, fid, NameValues("folder"), filename)
-                End If
             Next
-        Next
-
+            skip += chunkSize
+        Loop While recordCount > 0
 
     End Sub
     Public Class QuickBaseClient
